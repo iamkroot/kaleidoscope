@@ -3,4 +3,4 @@ project(Kaleidoscope)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(kaleidoscope main.cpp)
+add_executable(kaleidoscope main.cpp lexer.hpp)
