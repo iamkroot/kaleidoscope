@@ -161,44 +161,6 @@ namespace parser {
         getNextToken();
         return parseProto();
     }
-
-    static void handleDefn() {
-        if (parseDefn()) {
-            fprintf(stdout, "Parsed fn defn\n");
-        }
-        else {
-            getNextToken();
-        }
-    }
-
-    static void handleExtern() {
-        if (parseExtern()) {
-            fprintf(stdout, "Parsed extern\n");
-        } else {
-            getNextToken();
-        }
-    }
-
-    static void handleTopLevelExpr() {
-        if (parseTopLevelExpr()) {
-            fprintf(stdout, "Parsed top level expr\n");
-        } else {
-            getNextToken();
-        }
-    }
-
-    static void mainLoop() {
-        while (true) {
-            fprintf(stdout, "ready> ");
-            switch (curTok) {
-                case Token::EOF_:return;
-                case ';': getNextToken(); break;
-                case Token::DEF: handleDefn(); break;
-                case Token::EXTERN: handleExtern(); break;
-                default: handleTopLevelExpr(); break;
-            }
-        }
-    }
 }
 
 #endif //PARSER_HPP
