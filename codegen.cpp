@@ -2,6 +2,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include "ast.hpp"
 
 using namespace llvm;
@@ -11,6 +12,7 @@ using namespace AST;
 std::unique_ptr<LLVMContext> ctx;
 std::unique_ptr<IRBuilder<>> builder;
 std::unique_ptr<Module> module;
+std::unique_ptr<legacy::FunctionPassManager> fpm;
 
 static std::map<std::string, Value*> namedValues;
 
@@ -95,6 +97,7 @@ Function* FunctionAST::codegen() {
     if (Value* retval = body->codegen()) {
         builder->CreateRet(retval);
         verifyFunction(*func);
+        fpm->run(*func);
         return func;
     }
     func->eraseFromParent();

@@ -1,15 +1,27 @@
 #include <iostream>
-#include "parser.hpp"
 #include "llvm/IR/IRBuilder.h"
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Scalar/GVN.h>
+#include "parser.hpp"
 
 using namespace parser;
+
 extern std::unique_ptr<LLVMContext> ctx;
 extern std::unique_ptr<Module> module;
 extern std::unique_ptr<IRBuilder<>> builder;
+extern std::unique_ptr<legacy::FunctionPassManager> fpm;
 
-static void initModule() {
+static void initModuleAndPassMgr() {
     ctx = std::make_unique<LLVMContext>();
     module = std::make_unique<Module>("my jit", *ctx);
+    fpm = std::make_unique<legacy::FunctionPassManager>(module.get());
+    fpm->add(createInstructionCombiningPass());
+    fpm->add(createReassociatePass());
+    fpm->add(createGVNPass());
+    fpm->add(createCFGSimplificationPass());
+    fpm->doInitialization();
     builder = std::make_unique<IRBuilder<>>(*ctx);
 }
 
@@ -77,7 +89,7 @@ int main() {
     fprintf(stdout, "ready> ");
     getNextToken();
 
-    initModule();
+    initModuleAndPassMgr();
 
     mainLoop();
     module->print(errs(), nullptr);
