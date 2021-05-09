@@ -84,7 +84,7 @@ Value* IfExprAST::codegen() {
     Value* condV = cond->codegen();
     if (!condV)
         return nullptr;
-    condV = builder->CreateFCmpONE(condV, ConstantFP::get(Type::getDoubleTy(*ctx), APFloat(0.0)), "ifcond");
+    condV = builder->CreateFCmpONE(condV, ConstantFP::get(*ctx, APFloat(0.0)), "ifcond");
 
     Function* func = builder->GetInsertBlock()->getParent();
     BasicBlock* thenBB = BasicBlock::Create(*ctx, "then", func);
@@ -112,6 +112,51 @@ Value* IfExprAST::codegen() {
     pn->addIncoming(thenV, thenBB);
     pn->addIncoming(elseV, elseBB);
     return pn;
+}
+
+Value* ForExprAST::codegen() {
+    Value* startV = start->codegen();
+    if (!startV)
+        return nullptr;
+    Function* func = builder->GetInsertBlock()->getParent();
+    BasicBlock* preheaderBB = builder->GetInsertBlock();
+    BasicBlock* loopBB = BasicBlock::Create(*ctx, "loop", func);
+    builder->CreateBr(loopBB);
+
+    builder->SetInsertPoint(loopBB);
+    PHINode* var = builder->CreatePHI(Type::getDoubleTy(*ctx), 2, varName);
+    var->addIncoming(startV, preheaderBB);
+
+    Value* shadowedVal = namedValues[varName];
+    namedValues[varName] = var;
+
+    if (!body->codegen())
+        return nullptr;
+
+    Value* stepV;
+    if (step) {
+        stepV = step->codegen();
+        if (!stepV)
+            return nullptr;
+    } else {
+        stepV = ConstantFP::get(*ctx, APFloat(1.0));
+    }
+    Value* nextVar = builder->CreateFAdd(var, stepV, "nextvar");
+    Value* endV = end->codegen();
+    if (!endV)
+        return nullptr;
+    endV = builder->CreateFCmpONE(endV, ConstantFP::get(*ctx, APFloat(0.0)), "loopcond");
+
+    BasicBlock* loopEndBB = builder->GetInsertBlock();
+    BasicBlock* afterBB = BasicBlock::Create(*ctx, "afterloop", func);
+    builder->CreateCondBr(endV, loopBB, afterBB);
+    builder->SetInsertPoint(afterBB);
+    var->addIncoming(nextVar, loopEndBB);
+    if (shadowedVal)
+        namedValues[varName] = shadowedVal;
+    else
+        namedValues.erase(varName);
+    return Constant::getNullValue(Type::getDoubleTy(*ctx));
 }
 
 Function* PrototypeAST::codegen() {

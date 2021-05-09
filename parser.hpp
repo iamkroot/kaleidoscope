@@ -103,6 +103,46 @@ namespace parser {
         return std::make_unique<IfExprAST>(std::move(cond), std::move(then), std::move(else_));
     }
 
+    static std::unique_ptr<ExprAST> parseForExpr() {
+        getNextToken();
+        if (curTok != Token::IDENT)
+            return logError("Expected identifier after 'for'");
+        std::string idName = identStr;
+        getNextToken();
+
+        if (curTok != '=')
+            return logError("Expected '=' after identifier");
+        getNextToken();
+
+        auto start = parseExpr();
+        if (!start)
+            return nullptr;
+        if (curTok != ',')
+            return logError("Expected ',' after start val");
+        getNextToken();
+
+        auto end = parseExpr();
+        if (!end)
+            return nullptr;
+
+        std::unique_ptr<ExprAST> step;
+        if (curTok == ',') {
+            getNextToken();
+            step = parseExpr();
+            if (!step)
+                return nullptr;
+        }
+
+        if (curTok != Token::IN)
+            return logError("Expected 'in' after for");
+        getNextToken();
+
+        auto body = parseExpr();
+        if (!body)
+            return nullptr;
+        return std::make_unique<ForExprAST>(idName, std::move(start), std::move(end), std::move(step), std::move(body));
+    }
+
     static std::unique_ptr<ExprAST> parsePrimary() {
         switch (curTok) {
             case Token::IDENT:
@@ -113,6 +153,8 @@ namespace parser {
                 return parseParenExpr();
             case Token::IF:
                 return parseIfExpr();
+            case Token::FOR:
+                return parseForExpr();
             default:
                 return logError("unknown token");
         }

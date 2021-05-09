@@ -13,6 +13,8 @@ enum Token {
     IF = -6,
     THEN = -7,
     ELSE = -8,
+    FOR = -9,
+    IN = -10,
 };
 
 static std::string identStr;
@@ -40,6 +42,10 @@ static int gettok() {
             return Token::THEN;
         else if (identStr == "else")
             return Token::ELSE;
+        else if (identStr == "for")
+            return Token::FOR;
+        else if (identStr == "in")
+            return Token::IN;
         return Token::IDENT;
     }
     if (isdigit(prevChar) || prevChar == '.') {
