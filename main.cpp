@@ -1,22 +1,10 @@
 #include <iostream>
-#include "lexer.hpp"
+#include "parser.hpp"
 
 int main() {
-    int tok;
-    do {
-        tok = gettok();
-        std::cout << "Token " << tok;
-        switch (tok) {
-            case Token::IDENT:
-                std::cout << " " << identStr;
-                break;
-            case Token::NUM:
-                std::cout << " " << numVal;
-                break;
-            default:
-                break;
-        }
-        std::cout << std::endl;
-    } while (tok != Token::EOF_);
+    using namespace parser;
+    fprintf(stdout, "ready> ");
+    getNextToken();
+    mainLoop();
     return 0;
 }
