@@ -4,17 +4,20 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include "ast.hpp"
+#include "KaleidoscopeJIT.h"
 
 using namespace llvm;
 using namespace AST;
 
 
-std::unique_ptr<LLVMContext> ctx;
-std::unique_ptr<IRBuilder<>> builder;
-std::unique_ptr<Module> module;
-std::unique_ptr<legacy::FunctionPassManager> fpm;
+extern std::unique_ptr<LLVMContext> ctx;
+extern std::unique_ptr<IRBuilder<>> builder;
+extern std::unique_ptr<Module> module;
+extern std::unique_ptr<legacy::FunctionPassManager> fpm;
+extern std::unique_ptr<llvm::orc::KaleidoscopeJIT> jit;
 
 static std::map<std::string, Value*> namedValues;
+extern std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtos;
 
 Value* logErrorV(const char* str) {
     fprintf(stderr, "Error: %s\n", str);
@@ -53,8 +56,17 @@ Value* BinaryExprAST::codegen() {
     }
 }
 
+Function* getFunction(const std::string &name) {
+    if (auto* f = module->getFunction(name))
+        return f;
+    auto fi = functionProtos.find(name);
+    if (fi != functionProtos.end())
+        return fi->second->codegen();
+    return nullptr;
+}
+
 Value* CallExprAST::codegen() {
-    Function* calleeFunc = module->getFunction(callee);
+    Function* calleeFunc = getFunction(callee);
     if (!calleeFunc)
         return logErrorV("Unknown function referenced");
     if (calleeFunc->arg_size() != args.size())
@@ -81,14 +93,13 @@ Function* PrototypeAST::codegen() {
 }
 
 Function* FunctionAST::codegen() {
-    Function* func = module->getFunction(proto->getName());
+    auto &p = *proto;
+    functionProtos[p.getName()] = std::move(proto);
+    Function* func = getFunction(p.getName());
 
     if (!func)
-        func = proto->codegen();
-    if (!func)
         return nullptr;
-    if (!func->empty())
-        return (Function*) (logErrorV("Function cannot be redefined"));
+
     BasicBlock* bb = BasicBlock::Create(*ctx, "entry", func);
     builder->SetInsertPoint(bb);
     namedValues.clear();

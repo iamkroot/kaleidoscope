@@ -5,17 +5,22 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
 #include "parser.hpp"
+#include "KaleidoscopeJIT.h"
 
 using namespace parser;
 
-extern std::unique_ptr<LLVMContext> ctx;
-extern std::unique_ptr<Module> module;
-extern std::unique_ptr<IRBuilder<>> builder;
-extern std::unique_ptr<legacy::FunctionPassManager> fpm;
+std::unique_ptr<LLVMContext> ctx;
+std::unique_ptr<Module> module;
+std::unique_ptr<IRBuilder<>> builder;
+std::unique_ptr<legacy::FunctionPassManager> fpm;
+std::unique_ptr<llvm::orc::KaleidoscopeJIT> jit;
+std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtos;
 
 static void initModuleAndPassMgr() {
     ctx = std::make_unique<LLVMContext>();
     module = std::make_unique<Module>("my jit", *ctx);
+    module->setDataLayout(jit->getTargetMachine().createDataLayout());
+
     fpm = std::make_unique<legacy::FunctionPassManager>(module.get());
     fpm->add(createInstructionCombiningPass());
     fpm->add(createReassociatePass());
@@ -31,6 +36,8 @@ static void handleDefn() {
             fprintf(stdout, "Read fn defn:\n");
             fnIR->print(outs());
             fprintf(stdout, "\n");
+            jit->addModule(std::move(module));
+            initModuleAndPassMgr();
         }
     } else {
         getNextToken();
@@ -43,6 +50,7 @@ static void handleExtern() {
             fprintf(stdout, "Read extern:\n");
             fnIR->print(outs());
             fprintf(stdout, "\n");
+            functionProtos[proto->getName()] = std::move(proto);
         }
     } else {
         getNextToken();
@@ -51,11 +59,15 @@ static void handleExtern() {
 
 static void handleTopLevelExpr() {
     if (auto fn = parseTopLevelExpr()) {
-        if (auto* fnIR = fn->codegen()) {
-            fprintf(stdout, "Read top-level expr:\n");
-            fnIR->print(outs());
-            fprintf(stdout, "\n");
-            fnIR->eraseFromParent();
+        if (fn->codegen()) {
+            auto h = jit->addModule(std::move(module));
+            initModuleAndPassMgr();
+            auto exprSym = jit->findSymbol("__anon_expr");
+            assert(exprSym && "Function not found");
+
+            auto fp = (double (*)())(intptr_t)cantFail(exprSym.getAddress());
+            fprintf(stdout, "Evaluated to %f\n", fp());
+            jit->removeModule(h);
         }
     } else {
         getNextToken();
@@ -85,9 +97,13 @@ static void mainLoop() {
 }
 
 int main() {
-    using namespace parser;
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
     fprintf(stdout, "ready> ");
     getNextToken();
+
+    jit = std::make_unique<llvm::orc::KaleidoscopeJIT>();
 
     initModuleAndPassMgr();
 
