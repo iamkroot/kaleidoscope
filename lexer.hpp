@@ -15,6 +15,8 @@ enum Token {
     ELSE = -8,
     FOR = -9,
     IN = -10,
+    BINARY = -11,
+    UNARY = -12,
 };
 
 static std::string identStr;
@@ -46,6 +48,10 @@ static int gettok() {
             return Token::FOR;
         else if (identStr == "in")
             return Token::IN;
+        else if (identStr == "binary")
+            return Token::BINARY;
+        else if (identStr == "unary")
+            return Token::UNARY;
         return Token::IDENT;
     }
     if (isdigit(prevChar) || prevChar == '.') {

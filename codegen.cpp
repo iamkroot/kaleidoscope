@@ -18,9 +18,19 @@ extern std::unique_ptr<llvm::orc::KaleidoscopeJIT> jit;
 
 static std::map<std::string, Value*> namedValues;
 extern std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtos;
+extern std::map<char, int> binopPrec;
 
 Value* logErrorV(const char* str) {
     fprintf(stderr, "Error: %s\n", str);
+    return nullptr;
+}
+
+Function* getFunction(const std::string &name) {
+    if (auto* f = module->getFunction(name))
+        return f;
+    auto fi = functionProtos.find(name);
+    if (fi != functionProtos.end())
+        return fi->second->codegen();
     return nullptr;
 }
 
@@ -34,6 +44,16 @@ Value* VariableExprAST::codegen() {
         logErrorV("Unknown variable name");
     }
     return v;
+}
+
+Value* UnaryExprAST::codegen() {
+    Value* operandV = operand->codegen();
+    if (!operandV)
+        return nullptr;
+    Function* f = getFunction(std::string("unary") + opCode);
+    if (!f)
+        return logErrorV("Unknown unary op");
+    return builder->CreateCall(f, operandV, "unop");
 }
 
 Value* BinaryExprAST::codegen() {
@@ -52,17 +72,12 @@ Value* BinaryExprAST::codegen() {
             l = builder->CreateFCmpULT(l, r, "cmptmp");
             return builder->CreateUIToFP(l, Type::getDoubleTy(*ctx), "bool");
         default:
-            return logErrorV("Invalid binop");
+            break;
     }
-}
-
-Function* getFunction(const std::string &name) {
-    if (auto* f = module->getFunction(name))
-        return f;
-    auto fi = functionProtos.find(name);
-    if (fi != functionProtos.end())
-        return fi->second->codegen();
-    return nullptr;
+    Function* f = getFunction(std::string("binary") + op);
+    assert(f && "binary op not found");
+    Value* ops[2] = {l, r};
+    return builder->CreateCall(f, ops, "binop");
 }
 
 Value* CallExprAST::codegen() {
@@ -178,7 +193,9 @@ Function* FunctionAST::codegen() {
 
     if (!func)
         return nullptr;
-
+    if (p.isBinaryOp()) {
+        binopPrec[p.getOperatorName()] = p.getBinaryPrecedence();
+    }
     BasicBlock* bb = BasicBlock::Create(*ctx, "entry", func);
     builder->SetInsertPoint(bb);
     namedValues.clear();

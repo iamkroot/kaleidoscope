@@ -5,6 +5,8 @@
 #include "lexer.hpp"
 #include "ast.hpp"
 
+extern std::map<char, int> binopPrec;
+
 namespace parser {
     using namespace AST;
     static int curTok;
@@ -12,11 +14,6 @@ namespace parser {
     static int getNextToken() {
         return curTok = gettok();
     }
-
-    static const std::map<char, int> binopPrec = {{'<', 10},
-                                                  {'+', 20},
-                                                  {'-', 30},
-                                                  {'*', 40}};
 
     static int getTokPrec() {
         if (!isascii(curTok))
@@ -160,6 +157,16 @@ namespace parser {
         }
     }
 
+    static std::unique_ptr<ExprAST> parseUnaryExpr() {
+        if (!isascii(curTok) || curTok == '(')
+            return parsePrimary();
+        int opcode = curTok;
+        getNextToken();
+        if (auto operand = parseUnaryExpr())
+            return std::make_unique<UnaryExprAST>(opcode, std::move(operand));
+        return nullptr;
+    }
+
     static std::unique_ptr<ExprAST> parseBinOpRHS(int exprPrec, std::unique_ptr<ExprAST> lhs) {
         while (true) {
             int tokPrec = getTokPrec();
@@ -167,7 +174,7 @@ namespace parser {
                 return lhs;
             int binOp = curTok;
             getNextToken();
-            auto rhs = parsePrimary();
+            auto rhs = parseUnaryExpr();
             if (!rhs)
                 return nullptr;
             int nextPrec = getTokPrec();
@@ -181,17 +188,54 @@ namespace parser {
     }
 
     static std::unique_ptr<ExprAST> parseExpr() {
-        auto lhs = parsePrimary();
+        auto lhs = parseUnaryExpr();
         if (!lhs)
             return nullptr;
         return parseBinOpRHS(0, std::move(lhs));
     }
 
     static std::unique_ptr<PrototypeAST> parseProto() {
-        if (curTok != Token::IDENT)
-            return logErrorP("Expected function name");
-        auto fnName = identStr;
-        getNextToken();
+        std::string fnName;
+        enum Kind {
+            IDENTIFIER = 0,
+            UNARY = 1,
+            BINARY = 2
+        };
+        Kind kind;
+        unsigned binaryPrecedence = 30;
+        switch (curTok) {
+            case Token::IDENT:
+                fnName = identStr;
+                kind = Kind::IDENTIFIER;
+                getNextToken();
+                break;
+            case Token::UNARY:
+                getNextToken();
+                if (!isascii(curTok))
+                    return logErrorP("Expected unary op");
+                fnName = "unary";
+                fnName += static_cast<char>(curTok);
+                kind = Kind::UNARY;
+                getNextToken();
+                break;
+            case Token::BINARY:
+                getNextToken();
+                if (!isascii(curTok))
+                    return logErrorP("Expected binary op");
+                fnName = "binary";
+                fnName += static_cast<char>(curTok);
+                kind = Kind::BINARY;
+                getNextToken();
+                if (curTok == Token::NUM) {
+                    if (numVal < 1 || numVal > 100)
+                        return logErrorP("Precedence out of range");
+                    binaryPrecedence = static_cast<unsigned>( numVal);
+                    getNextToken();
+                }
+                break;
+            default:
+                return logErrorP("Expected function name");
+        }
         if (curTok != '(')
             return logErrorP("Expected '(' in signature");
         std::vector<std::string> argNames;
@@ -201,7 +245,10 @@ namespace parser {
         if (curTok != ')')
             return logErrorP("Expected ')'");
         getNextToken();
-        return std::make_unique<PrototypeAST>(fnName, argNames);
+        if (kind != Kind::IDENTIFIER && argNames.size() != kind) {
+            return logErrorP("Invalid num of args");
+        }
+        return std::make_unique<PrototypeAST>(fnName, argNames, kind != Kind::IDENTIFIER, binaryPrecedence);
     }
 
     static std::unique_ptr<FunctionAST> parseDefn() {

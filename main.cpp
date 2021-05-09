@@ -15,6 +15,10 @@ std::unique_ptr<IRBuilder<>> builder;
 std::unique_ptr<legacy::FunctionPassManager> fpm;
 std::unique_ptr<llvm::orc::KaleidoscopeJIT> jit;
 std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtos;
+std::map<char, int> binopPrec = {{'<', 10},
+                                 {'+', 20},
+                                 {'-', 30},
+                                 {'*', 40}};;
 
 static void initModuleAndPassMgr() {
     ctx = std::make_unique<LLVMContext>();
@@ -65,7 +69,7 @@ static void handleTopLevelExpr() {
             auto exprSym = jit->findSymbol("__anon_expr");
             assert(exprSym && "Function not found");
 
-            auto fp = (double (*)())(intptr_t)cantFail(exprSym.getAddress());
+            auto fp = (double (*)()) (intptr_t) cantFail(exprSym.getAddress());
             fprintf(stdout, "Evaluated to %f\n", fp());
             jit->removeModule(h);
         }
@@ -94,6 +98,18 @@ static void mainLoop() {
                 break;
         }
     }
+}
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" double putchard(double X) {
+  fputc((char)X, stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
 }
 
 int main() {
