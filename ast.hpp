@@ -58,6 +58,14 @@ namespace AST {
 
     };
 
+    class IfExprAST : public ExprAST {
+        std::unique_ptr<ExprAST> cond, then, else_;
+    public:
+        IfExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> then, std::unique_ptr<ExprAST> else_)
+                : cond(std::move(cond)), then(std::move(then)), else_(std::move(else_)) {}
+
+        Value* codegen() override;
+    };
 
     class PrototypeAST {
         std::string name;

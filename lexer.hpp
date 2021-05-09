@@ -9,7 +9,10 @@ enum Token {
     DEF = -2,
     EXTERN = -3,
     IDENT = -4,
-    NUM = -5
+    NUM = -5,
+    IF = -6,
+    THEN = -7,
+    ELSE = -8,
 };
 
 static std::string identStr;
@@ -31,6 +34,12 @@ static int gettok() {
             return Token::DEF;
         else if (identStr == "extern")
             return Token::EXTERN;
+        else if (identStr == "if")
+            return Token::IF;
+        else if (identStr == "then")
+            return Token::THEN;
+        else if (identStr == "else")
+            return Token::ELSE;
         return Token::IDENT;
     }
     if (isdigit(prevChar) || prevChar == '.') {

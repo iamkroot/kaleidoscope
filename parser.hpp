@@ -81,6 +81,28 @@ namespace parser {
         return std::make_unique<CallExprAST>(idName, std::move(args));
     }
 
+    static std::unique_ptr<ExprAST> parseIfExpr() {
+        getNextToken();
+        auto cond = parseExpr();
+        if (!cond)
+            return nullptr;
+        if (curTok != Token::THEN)
+            return logError("Expected then");
+        getNextToken();
+
+        auto then = parseExpr();
+        if (!then)
+            return nullptr;
+        if (curTok != Token::ELSE)
+            return logError("Expected else");
+        getNextToken();
+
+        auto else_ = parseExpr();
+        if (!else_)
+            return nullptr;
+        return std::make_unique<IfExprAST>(std::move(cond), std::move(then), std::move(else_));
+    }
+
     static std::unique_ptr<ExprAST> parsePrimary() {
         switch (curTok) {
             case Token::IDENT:
@@ -89,6 +111,8 @@ namespace parser {
                 return parseNumExpr();
             case '(':
                 return parseParenExpr();
+            case Token::IF:
+                return parseIfExpr();
             default:
                 return logError("unknown token");
         }

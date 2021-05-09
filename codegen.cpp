@@ -80,6 +80,40 @@ Value* CallExprAST::codegen() {
     return builder->CreateCall(calleeFunc, argsV, "calltmp");
 }
 
+Value* IfExprAST::codegen() {
+    Value* condV = cond->codegen();
+    if (!condV)
+        return nullptr;
+    condV = builder->CreateFCmpONE(condV, ConstantFP::get(Type::getDoubleTy(*ctx), APFloat(0.0)), "ifcond");
+
+    Function* func = builder->GetInsertBlock()->getParent();
+    BasicBlock* thenBB = BasicBlock::Create(*ctx, "then", func);
+    BasicBlock* elseBB = BasicBlock::Create(*ctx, "else");
+    BasicBlock* mergeBB = BasicBlock::Create(*ctx, "ifcont");
+    builder->CreateCondBr(condV, thenBB, elseBB);
+    builder->SetInsertPoint(thenBB);
+    Value* thenV = then->codegen();
+    if (!thenV)
+        return nullptr;
+    builder->CreateBr(mergeBB);
+    thenBB = builder->GetInsertBlock();
+
+    func->getBasicBlockList().push_back(elseBB);
+    builder->SetInsertPoint(elseBB);
+    Value* elseV = else_->codegen();
+    if (!elseV)
+        return nullptr;
+    builder->CreateBr(mergeBB);
+    elseBB = builder->GetInsertBlock();
+
+    func->getBasicBlockList().push_back(mergeBB);
+    builder->SetInsertPoint(mergeBB);
+    PHINode* pn = builder->CreatePHI(Type::getDoubleTy(*ctx), 2, "iftmp");
+    pn->addIncoming(thenV, thenBB);
+    pn->addIncoming(elseV, elseBB);
+    return pn;
+}
+
 Function* PrototypeAST::codegen() {
     std::vector<Type*> doubles(args.size(), Type::getDoubleTy(*ctx));
     FunctionType* ft = FunctionType::get(Type::getDoubleTy(*ctx), doubles, false);
