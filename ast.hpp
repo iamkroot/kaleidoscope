@@ -33,6 +33,10 @@ namespace AST {
 
         Value* codegen() override;
 
+        [[nodiscard]] const std::string &getName() const {
+            return name;
+        }
+
     };
 
     class UnaryExprAST : public ExprAST {
@@ -55,6 +59,16 @@ namespace AST {
 
         Value* codegen() override;
 
+    };
+
+    class VarExprAST : public ExprAST {
+        std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> varNames;
+        std::unique_ptr<ExprAST> body;
+    public:
+        VarExprAST(std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> varNames,
+                   std::unique_ptr<ExprAST> body) : varNames(std::move(varNames)), body(std::move(body)) {}
+
+        Value* codegen() override;
     };
 
     class CallExprAST : public ExprAST {

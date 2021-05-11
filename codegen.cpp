@@ -16,13 +16,18 @@ extern std::unique_ptr<Module> module;
 extern std::unique_ptr<legacy::FunctionPassManager> fpm;
 extern std::unique_ptr<llvm::orc::KaleidoscopeJIT> jit;
 
-static std::map<std::string, Value*> namedValues;
+static std::map<std::string, AllocaInst*> namedValues;
 extern std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtos;
 extern std::map<char, int> binopPrec;
 
 Value* logErrorV(const char* str) {
     fprintf(stderr, "Error: %s\n", str);
     return nullptr;
+}
+
+static AllocaInst* createEntryBlockAlloca(Function* func, const std::string &varName) {
+    IRBuilder<> tmpBuilder(&func->getEntryBlock(), func->getEntryBlock().begin());
+    return tmpBuilder.CreateAlloca(Type::getDoubleTy(*ctx), nullptr, varName);
 }
 
 Function* getFunction(const std::string &name) {
@@ -43,7 +48,7 @@ Value* VariableExprAST::codegen() {
     if (!v) {
         logErrorV("Unknown variable name");
     }
-    return v;
+    return builder->CreateLoad(Type::getDoubleTy(*ctx), v, name);
 }
 
 Value* UnaryExprAST::codegen() {
@@ -57,6 +62,19 @@ Value* UnaryExprAST::codegen() {
 }
 
 Value* BinaryExprAST::codegen() {
+    if (op == '=') {
+        auto* lhse = dynamic_cast<VariableExprAST*>(lhs.get());
+        if (!lhse)
+            return logErrorV("dest of '=' must be var");
+        Value* val = rhs->codegen();
+        if (!val)
+            return nullptr;
+        Value *var = namedValues[lhse->getName()];
+        if (!var)
+            return logErrorV("Unknown var");
+        builder->CreateStore(val, var);
+        return val;
+    }
     Value* l = lhs->codegen();
     Value* r = rhs->codegen();
     if (!l || !r)
@@ -79,7 +97,37 @@ Value* BinaryExprAST::codegen() {
     Value* ops[2] = {l, r};
     return builder->CreateCall(f, ops, "binop");
 }
+Value* VarExprAST::codegen() {
+    std::vector<AllocaInst*> shadowed;
+    Function *func = builder->GetInsertBlock()->getParent();
+    for(const auto&[varName, init]:varNames) {
+        Value* initVal;
+        if (init) {
+            initVal = init->codegen();
+            if (!initVal)
+                return nullptr;
+        } else {
+            initVal = ConstantFP::get(*ctx, APFloat(0.0));
+        }
+        auto* alloca = createEntryBlockAlloca(func, varName);
+        builder->CreateStore(initVal, alloca);
 
+        shadowed.push_back(namedValues[varName]);
+        namedValues[varName] = alloca;
+    }
+    Value * bodyVal = body->codegen();
+    if (!bodyVal)
+        return nullptr;
+
+    for(unsigned i = 0; i< varNames.size(); ++i) {
+        auto *old = shadowed[i];
+        if (old)
+            namedValues[varNames[i].first] = old;
+        else
+            namedValues.erase(varNames[i].first);
+    }
+    return bodyVal;
+}
 Value* CallExprAST::codegen() {
     Function* calleeFunc = getFunction(callee);
     if (!calleeFunc)
@@ -130,20 +178,19 @@ Value* IfExprAST::codegen() {
 }
 
 Value* ForExprAST::codegen() {
+    Function* func = builder->GetInsertBlock()->getParent();
+    AllocaInst *alloca = createEntryBlockAlloca(func, varName);
     Value* startV = start->codegen();
     if (!startV)
         return nullptr;
-    Function* func = builder->GetInsertBlock()->getParent();
-    BasicBlock* preheaderBB = builder->GetInsertBlock();
+    builder->CreateStore(startV, alloca);
     BasicBlock* loopBB = BasicBlock::Create(*ctx, "loop", func);
     builder->CreateBr(loopBB);
 
     builder->SetInsertPoint(loopBB);
-    PHINode* var = builder->CreatePHI(Type::getDoubleTy(*ctx), 2, varName);
-    var->addIncoming(startV, preheaderBB);
 
-    Value* shadowedVal = namedValues[varName];
-    namedValues[varName] = var;
+    AllocaInst* shadowedVal = namedValues[varName];
+    namedValues[varName] = alloca;
 
     if (!body->codegen())
         return nullptr;
@@ -156,17 +203,19 @@ Value* ForExprAST::codegen() {
     } else {
         stepV = ConstantFP::get(*ctx, APFloat(1.0));
     }
-    Value* nextVar = builder->CreateFAdd(var, stepV, "nextvar");
     Value* endV = end->codegen();
     if (!endV)
         return nullptr;
+
+    Value* curVar = builder->CreateLoad(alloca->getAllocatedType(), alloca, varName);
+    Value* nextVar = builder->CreateFAdd(curVar, stepV, "nextvar");
+    builder->CreateStore(nextVar, alloca);
+
     endV = builder->CreateFCmpONE(endV, ConstantFP::get(*ctx, APFloat(0.0)), "loopcond");
 
-    BasicBlock* loopEndBB = builder->GetInsertBlock();
     BasicBlock* afterBB = BasicBlock::Create(*ctx, "afterloop", func);
     builder->CreateCondBr(endV, loopBB, afterBB);
     builder->SetInsertPoint(afterBB);
-    var->addIncoming(nextVar, loopEndBB);
     if (shadowedVal)
         namedValues[varName] = shadowedVal;
     else
@@ -199,8 +248,11 @@ Function* FunctionAST::codegen() {
     BasicBlock* bb = BasicBlock::Create(*ctx, "entry", func);
     builder->SetInsertPoint(bb);
     namedValues.clear();
-    for (auto &arg: func->args())
-        namedValues[arg.getName().str()] = &arg;
+    for (auto &arg: func->args()) {
+        auto* alloca = createEntryBlockAlloca(func, arg.getName().str());
+        builder->CreateStore(&arg, alloca);
+        namedValues[arg.getName().str()] = alloca;
+    }
     if (Value* retval = body->codegen()) {
         builder->CreateRet(retval);
         verifyFunction(*func);

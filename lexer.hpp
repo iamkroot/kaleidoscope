@@ -17,6 +17,7 @@ enum Token {
     IN = -10,
     BINARY = -11,
     UNARY = -12,
+    VAR = -13,
 };
 
 static std::string identStr;
@@ -52,6 +53,8 @@ static int gettok() {
             return Token::BINARY;
         else if (identStr == "unary")
             return Token::UNARY;
+        else if (identStr == "var")
+            return Token::VAR;
         return Token::IDENT;
     }
     if (isdigit(prevChar) || prevChar == '.') {

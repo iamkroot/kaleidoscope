@@ -4,6 +4,8 @@
 #include <llvm/Transforms/InstCombine/InstCombine.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
+#include <llvm/Transforms/Utils.h>
+
 #include "parser.hpp"
 #include "KaleidoscopeJIT.h"
 
@@ -15,7 +17,8 @@ std::unique_ptr<IRBuilder<>> builder;
 std::unique_ptr<legacy::FunctionPassManager> fpm;
 std::unique_ptr<llvm::orc::KaleidoscopeJIT> jit;
 std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtos;
-std::map<char, int> binopPrec = {{'<', 10},
+std::map<char, int> binopPrec = {{'=', 2},
+                                 {'<', 10},
                                  {'+', 20},
                                  {'-', 30},
                                  {'*', 40}};;
@@ -26,6 +29,7 @@ static void initModuleAndPassMgr() {
     module->setDataLayout(jit->getTargetMachine().createDataLayout());
 
     fpm = std::make_unique<legacy::FunctionPassManager>(module.get());
+    fpm->add(createPromoteMemoryToRegisterPass());
     fpm->add(createInstructionCombiningPass());
     fpm->add(createReassociatePass());
     fpm->add(createGVNPass());
